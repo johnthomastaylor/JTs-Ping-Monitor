@@ -47,7 +47,7 @@ enum HostStore {
     private static func defaults() -> [PingHost] {
         [
             PingHost(address: "127.0.0.1", label: "localhost"),
-            PingHost(address: "1.1.1.1", label: "Cloudflare"),
+            PingHost(address: "1.1.1.1", label: "Cloudflare DNS"),
             PingHost(address: "8.8.8.8", label: "Google DNS"),
         ]
     }

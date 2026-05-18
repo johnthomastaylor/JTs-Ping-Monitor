@@ -4,6 +4,11 @@ A macOS app that continuously pings a list of hosts and shows their
 status, current latency, and cumulative stats (sent count, success rate,
 min / avg / max) in a sortable table.
 
+<p align="center">
+  <img src="docs/main-light.png" width="48%" alt="Main window (light)">
+  <img src="docs/main-dark.png" width="48%" alt="Main window (dark)">
+</p>
+
 - Standard dock app with a single main window
 - Cumulative stats per host since the last reset (persisted across
   launches)
@@ -34,6 +39,11 @@ open "/Applications/JT's Ping Monitor.app"
 Then open Settings (⌘,) and toggle **Launch at login**.
 
 ## Settings
+
+<p align="center">
+  <img src="docs/settings-light.png" width="48%" alt="Settings (light)">
+  <img src="docs/settings-dark.png" width="48%" alt="Settings (dark)">
+</p>
 
 Settings → General:
 
