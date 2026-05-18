@@ -82,6 +82,20 @@ final class StatsStore: ObservableObject {
         stats = working
     }
 
+    /// Apply a sequence of poll results in order, with one publish at the end.
+    /// Each entry increments its host's counters (so we never undercount when
+    /// the same host has multiple results in one batch window).
+    func applyBatch(_ entries: [(id: UUID, status: HostStatus, slowThresholdMs: Double)]) {
+        guard !entries.isEmpty else { return }
+        var working = stats
+        for entry in entries {
+            var s = working[entry.id] ?? HostStats()
+            s.record(entry.status, slowThresholdMs: entry.slowThresholdMs)
+            working[entry.id] = s
+        }
+        stats = working
+    }
+
     func remove(_ id: UUID) {
         stats.removeValue(forKey: id)
     }

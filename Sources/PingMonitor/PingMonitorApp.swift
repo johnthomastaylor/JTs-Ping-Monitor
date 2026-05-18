@@ -14,6 +14,7 @@ struct PingMonitorApp: App {
                 .environmentObject(preferences)
                 .task { state.start(preferences: preferences) }
         }
+        .defaultSize(width: 1000, height: 500)
 
         Settings {
             SettingsView()

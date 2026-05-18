@@ -8,7 +8,6 @@ min / avg / max) in a sortable table.
 - Cumulative stats per host since the last reset (persisted across
   launches)
 - Inline-edit any host's address or description (double-click a row)
-- Drag column headers to reorder; right-click a header to hide/show
 - Sort by any column (sort order is remembered)
 - Optional "Launch at login"
 
@@ -55,8 +54,11 @@ the entire list on save. Existing addresses keep their UUID and stats;
 new addresses become new hosts; addresses absent from the text are
 removed. Lines starting with `#` are ignored.
 
-Settings → Layout → **Reset Columns** — clears the saved column order
-and visibility back to defaults.
+Settings → Layout → **Shrink Columns** — collapses every column to its
+minimum width.
+
+Settings → Layout → **Reset Columns** — restores every column to its
+default width (the layout you'd see on first launch).
 
 ## Editing hosts
 
@@ -76,8 +78,7 @@ and visibility back to defaults.
 - Stats: `~/Library/Application Support/JTsPingMonitor/stats.json`
   (rewritten on every change)
 - Preferences (appearance, interval, decimals, all the toggles, sort
-  column + direction, column layout JSON): `UserDefaults` under
-  `com.jtt.PingMonitorDock`
+  column + direction): `UserDefaults` under `com.jtt.PingMonitorDock`
 - Login-at-launch registration: `SMAppService.mainApp` (system-level)
 
 ## Regenerating the app icon

@@ -18,6 +18,17 @@ final class AppState: ObservableObject {
     private weak var preferences: Preferences?
     private var started = false
 
+    // Poll-result coalescing: per-host writes from the polling tasks land here
+    // and are flushed into the stores in one batch per ~150ms window. This
+    // collapses dozens of `@Published` writes per second into one or two, and
+    // the async-flush hop ensures the publish lands between SwiftUI render
+    // passes rather than mid-layout (which was producing
+    // "Publishing changes from within view updates" warnings and the
+    // occasional NSTableView constraint crash).
+    private var pendingResults: [(id: UUID, status: HostStatus, slowThresholdMs: Double)] = []
+    private var flushScheduled = false
+    private let flushDelayNs: UInt64 = 150_000_000  // 150 ms
+
     init() {
         let status = StatusStore()
         let stats = StatsStore()
@@ -84,8 +95,7 @@ final class AppState: ObservableObject {
                 let status = await Pinger.ping(snap.address)
 
                 await MainActor.run {
-                    self.statusStore.set(status, for: hostID)
-                    self.statsStore.record(status, for: hostID, slowThresholdMs: intervalMs)
+                    self.queueResult(id: hostID, status: status, slowThresholdMs: intervalMs)
                 }
 
                 let target = TimeInterval(max(1, snap.interval))
@@ -93,6 +103,35 @@ final class AppState: ObservableObject {
                 try? await Task.sleep(nanoseconds: UInt64(remaining * 1_000_000_000))
             }
         }
+    }
+
+    private func queueResult(id: UUID, status: HostStatus, slowThresholdMs: Double) {
+        pendingResults.append((id: id, status: status, slowThresholdMs: slowThresholdMs))
+        scheduleFlush()
+    }
+
+    private func scheduleFlush() {
+        guard !flushScheduled else { return }
+        flushScheduled = true
+        Task { [weak self] in
+            try? await Task.sleep(nanoseconds: self?.flushDelayNs ?? 150_000_000)
+            self?.flushPending()
+        }
+    }
+
+    private func flushPending() {
+        flushScheduled = false
+        guard !pendingResults.isEmpty else { return }
+        let batch = pendingResults
+        pendingResults.removeAll(keepingCapacity: true)
+
+        // Status display: latest per host wins.
+        var latestStatus: [UUID: HostStatus] = [:]
+        for r in batch { latestStatus[r.id] = r.status }
+        statusStore.merge(latestStatus)
+
+        // Stats counters: apply every result in order so we never undercount.
+        statsStore.applyBatch(batch)
     }
 
     @discardableResult

@@ -2,10 +2,25 @@ import SwiftUI
 import AppKit
 
 extension Notification.Name {
-    static let resetColumnLayout = Notification.Name("JTsPingMonitor.resetColumnLayout")
+    static let shrinkColumns = Notification.Name("JTsPingMonitor.shrinkColumns")
+    static let resetColumns = Notification.Name("JTsPingMonitor.resetColumns")
 }
 
-private let columnCustomizationKey = "columnCustomizationData"
+// Default column widths, in the same order they appear in the Table builder:
+// status, Delay, Host, Description, Sent, % OK, Min, Avg, Max, Error.
+// Must stay in sync with the `.width(...)` declarations in MainWindowView.body.
+private let defaultColumnWidths: [CGFloat] = [
+    24,   // status
+    80,   // Delay (ms)
+    140,  // Host
+    180,  // Description
+    70,   // Sent
+    70,   // % OK
+    70,   // Min (ms)
+    70,   // Avg (ms)
+    70,   // Max (ms)
+    140,  // Error
+]
 
 private struct PingRow: Identifiable {
     let id: UUID
@@ -98,7 +113,6 @@ struct MainWindowView: View {
     ]
     @State private var selection: Set<UUID> = []
     @State private var showAddPopover: Bool = false
-    @State private var columnCustomization = TableColumnCustomization<PingRow>()
     @AppStorage("sortColumn") private var sortColumnRaw: String = SortColumn.host.rawValue
     @AppStorage("sortAscending") private var sortAscending: Bool = true
 
@@ -134,13 +148,23 @@ struct MainWindowView: View {
     }
 
     var body: some View {
-        Table(rows, selection: $selection, sortOrder: $sortOrder, columnCustomization: $columnCustomization) {
+        Table(rows, selection: $selection, sortOrder: $sortOrder) {
             TableColumn("") { row in
-                Image(systemName: row.iconName)
-                    .foregroundStyle(row.iconColor)
+                if preferences.showStatusIcons {
+                    Image(systemName: row.iconName)
+                        .foregroundStyle(row.iconColor)
+                } else {
+                    EmptyView()
+                }
             }
-            .width(24)
-            .customizationID("status")
+            .width(preferences.showStatusIcons ? 24 : 0)
+
+            TableColumn("Delay (ms)", value: \.stats.currentMsSortable) { row in
+                Text(row.delayText)
+                    .monospacedDigit()
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+            }
+            .width(min: 50, ideal: 80)
 
             TableColumn("Host", value: \.address) { row in
                 if editingHostID == row.id {
@@ -154,7 +178,6 @@ struct MainWindowView: View {
                 }
             }
             .width(min: 60, ideal: 140)
-            .customizationID("host")
 
             TableColumn("Description", value: \.label) { row in
                 if editingHostID == row.id {
@@ -168,53 +191,38 @@ struct MainWindowView: View {
                 }
             }
             .width(min: 60, ideal: 180)
-            .customizationID("description")
-
-            TableColumn("Delay (ms)", value: \.stats.currentMsSortable) { row in
-                Text(row.delayText)
-                    .monospacedDigit()
-                    .frame(maxWidth: .infinity, alignment: .trailing)
-            }
-            .width(min: 50, ideal: 80)
-            .customizationID("delay")
 
             TableColumn("Sent", value: \.stats.sentCount) { row in
                 Text("\(row.stats.sentCount)").monospacedDigit()
             }
             .width(min: 40, ideal: 70)
-            .customizationID("sent")
 
             TableColumn("% OK", value: \.stats.successRate) { row in
                 Text(row.percentText).monospacedDigit()
             }
             .width(min: 40, ideal: 70)
-            .customizationID("percentOk")
 
             TableColumn("Min (ms)", value: \.stats.minMsSortable) { row in
                 Text(row.minText).monospacedDigit()
             }
             .width(min: 40, ideal: 70)
-            .customizationID("min")
 
             TableColumn("Avg (ms)", value: \.stats.avgMsSortable) { row in
                 Text(row.avgText).monospacedDigit()
             }
             .width(min: 40, ideal: 70)
-            .customizationID("avg")
 
             TableColumn("Max (ms)", value: \.stats.maxMsSortable) { row in
                 Text(row.maxText).monospacedDigit()
             }
             .width(min: 40, ideal: 70)
-            .customizationID("max")
 
             TableColumn("Error") { row in
                 Text(row.errorText).foregroundStyle(row.errorColor)
             }
             .width(min: 60, ideal: 140)
-            .customizationID("error")
         }
-        .frame(minWidth: 820, minHeight: 320)
+        .frame(minWidth: 200, minHeight: 200)
         .opacity(preferences.dimMode ? preferences.dimOpacity : 1.0)
         .onDeleteCommand(perform: deleteSelected)
         .contextMenu(forSelectionType: UUID.self) { ids in
@@ -267,21 +275,10 @@ struct MainWindowView: View {
                 cancelEdit()
             }
         }
-        .onChange(of: preferences.showStatusIcons) { _, show in
-            columnCustomization[visibility: "status"] = show ? .visible : .hidden
-        }
         .onAppear {
-            // Restore sort order
             if let col = SortColumn(rawValue: sortColumnRaw) {
                 sortOrder = [col.comparator(ascending: sortAscending)]
             }
-            // Restore column layout (order + visibility)
-            if let data = UserDefaults.standard.data(forKey: columnCustomizationKey),
-               let decoded = try? JSONDecoder().decode(TableColumnCustomization<PingRow>.self, from: data) {
-                columnCustomization = decoded
-            }
-            // Re-apply showStatusIcons after restoring layout so the preference wins.
-            columnCustomization[visibility: "status"] = preferences.showStatusIcons ? .visible : .hidden
             installDoubleClickMonitor()
         }
         .onDisappear {
@@ -292,14 +289,11 @@ struct MainWindowView: View {
             sortColumnRaw = col.rawValue
             sortAscending = first.order == .forward
         }
-        .onChange(of: columnCustomization) { _, new in
-            if let data = try? JSONEncoder().encode(new) {
-                UserDefaults.standard.set(data, forKey: columnCustomizationKey)
-            }
+        .onReceive(NotificationCenter.default.publisher(for: .shrinkColumns)) { _ in
+            shrinkColumnsInActiveTable()
         }
-        .onReceive(NotificationCenter.default.publisher(for: .resetColumnLayout)) { _ in
-            columnCustomization = TableColumnCustomization<PingRow>()
-            columnCustomization[visibility: "status"] = preferences.showStatusIcons ? .visible : .hidden
+        .onReceive(NotificationCenter.default.publisher(for: .resetColumns)) { _ in
+            resetColumnsInActiveTable()
         }
         .confirmationDialog(resetTitle, isPresented: $showResetConfirm, titleVisibility: .visible) {
             Button("Reset", role: .destructive, action: confirmReset)
@@ -439,6 +433,42 @@ struct MainWindowView: View {
             view = current.superview
         }
         return false
+    }
+
+    /// Walks every app window to find the NSTableView backing SwiftUI's
+    /// Table, then sets each column's width to its declared minWidth. This
+    /// reaches under SwiftUI but only touches `NSTableColumn.width`, which is
+    /// a well-behaved AppKit property and doesn't fight the layout system.
+    /// Note: when triggered from Settings, the Settings window is key, so we
+    /// must search ALL windows rather than just the key window.
+    private func shrinkColumnsInActiveTable() {
+        for window in NSApp.windows {
+            guard let table = Self.findTableView(in: window.contentView) else { continue }
+            for column in table.tableColumns {
+                column.width = column.minWidth
+            }
+        }
+    }
+
+    /// Restore each column to its default ideal width — the layout the user
+    /// would see on first launch.
+    private func resetColumnsInActiveTable() {
+        for window in NSApp.windows {
+            guard let table = Self.findTableView(in: window.contentView) else { continue }
+            for (index, column) in table.tableColumns.enumerated()
+                where index < defaultColumnWidths.count {
+                column.width = defaultColumnWidths[index]
+            }
+        }
+    }
+
+    private static func findTableView(in view: NSView?) -> NSTableView? {
+        guard let view = view else { return nil }
+        if let table = view as? NSTableView { return table }
+        for subview in view.subviews {
+            if let found = findTableView(in: subview) { return found }
+        }
+        return nil
     }
 }
 

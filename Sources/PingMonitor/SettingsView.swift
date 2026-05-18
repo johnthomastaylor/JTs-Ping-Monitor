@@ -85,8 +85,12 @@ struct SettingsView: View {
 
             Section("Layout") {
                 Button {
-                    UserDefaults.standard.removeObject(forKey: "columnCustomizationData")
-                    NotificationCenter.default.post(name: .resetColumnLayout, object: nil)
+                    NotificationCenter.default.post(name: .shrinkColumns, object: nil)
+                } label: {
+                    Label("Shrink Columns", systemImage: "arrow.right.and.line.vertical.and.arrow.left")
+                }
+                Button {
+                    NotificationCenter.default.post(name: .resetColumns, object: nil)
                 } label: {
                     Label("Reset Columns", systemImage: "arrow.uturn.backward")
                 }
