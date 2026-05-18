@@ -54,7 +54,6 @@ struct SettingsView: View {
                     }
                 }
 
-                Toggle("Itty-bitty", isOn: $preferences.compactMode)
             }
 
             Section {

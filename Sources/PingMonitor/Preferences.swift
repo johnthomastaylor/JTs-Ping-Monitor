@@ -24,7 +24,6 @@ final class Preferences: ObservableObject {
     private let monochromeKey = "monochrome"
     private let dimModeKey = "dimMode"
     private let dimOpacityKey = "dimOpacity"
-    private let compactModeKey = "compactMode"
 
     @Published var appearance: Appearance {
         didSet {
@@ -61,10 +60,6 @@ final class Preferences: ObservableObject {
         didSet { defaults.set(dimOpacity, forKey: dimOpacityKey) }
     }
 
-    @Published var compactMode: Bool {
-        didSet { defaults.set(compactMode, forKey: compactModeKey) }
-    }
-
     init() {
         let stored = defaults.string(forKey: appearanceKey).flatMap(Appearance.init(rawValue:)) ?? .system
         self.appearance = stored
@@ -78,7 +73,6 @@ final class Preferences: ObservableObject {
         self.dimMode = defaults.object(forKey: dimModeKey) as? Bool ?? false
         let rawDim = defaults.object(forKey: dimOpacityKey) as? Double ?? 0.55
         self.dimOpacity = max(0.2, min(0.9, rawDim))
-        self.compactMode = defaults.object(forKey: compactModeKey) as? Bool ?? false
         applyAppearance()
     }
 

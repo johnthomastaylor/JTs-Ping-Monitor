@@ -39,8 +39,7 @@ Then open Settings (⌘,) and toggle **Launch at login**.
 Settings → General:
 
 - **Appearance** — System / Light / Dark
-- **Ping every N s** — background polling interval (1–300; default 5).
-  While the window is the active app, the loop tightens to 1 s.
+- **Ping every N s** — background polling interval (1–300; default 5)
 - **Show status icons** — toggles the leftmost ✓/✕ column
 - **Latency decimals** — `3` / `3.1` / `3.11` / `3.111`
 - **Push timeout hosts to bottom** — partition down hosts to the bottom

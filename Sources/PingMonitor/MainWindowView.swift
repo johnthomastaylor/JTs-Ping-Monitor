@@ -216,7 +216,6 @@ struct MainWindowView: View {
         }
         .frame(minWidth: 820, minHeight: 320)
         .opacity(preferences.dimMode ? preferences.dimOpacity : 1.0)
-        .font(preferences.compactMode ? .caption2 : .body)
         .onDeleteCommand(perform: deleteSelected)
         .contextMenu(forSelectionType: UUID.self) { ids in
             Button("Edit") { if let id = ids.first { beginEdit(id: id) } }
