@@ -33,8 +33,21 @@ if [[ ! -f "Resources/AppIcon.icns" ]]; then
 fi
 cp "Resources/AppIcon.icns" "${APP_BUNDLE}/Contents/Resources/AppIcon.icns"
 
-# Ad-hoc sign so login-item registration and TCC behave predictably.
-codesign --force --sign - --timestamp=none "${APP_BUNDLE}" >/dev/null
+# Sign the app. If DEVELOPER_ID is set, use that identity with the hardened
+# runtime (required for notarization). Otherwise fall back to ad-hoc, which is
+# fine for local dev but won't pass Gatekeeper on another machine.
+#
+# Example:
+#   DEVELOPER_ID="Developer ID Application: Your Name (ABCDE12345)" \
+#   ./scripts/build-app.sh
+if [[ -n "${DEVELOPER_ID:-}" ]]; then
+    echo "==> codesigning with ${DEVELOPER_ID}"
+    codesign --force --options runtime --timestamp \
+        --sign "${DEVELOPER_ID}" "${APP_BUNDLE}" >/dev/null
+else
+    echo "==> codesigning ad-hoc (set DEVELOPER_ID to sign for distribution)"
+    codesign --force --sign - --timestamp=none "${APP_BUNDLE}" >/dev/null
+fi
 
 # Nudge macOS to re-read the bundle's icon.
 touch "${APP_BUNDLE}"

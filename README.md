@@ -18,17 +18,29 @@ min / avg / max) in a sortable table.
 
 Requires macOS 14+ and Xcode command-line tools (Swift 5.9+).
 
-## Build
+## Install
+
+Download `JTs-Ping-Monitor.dmg` from the
+[latest release](https://github.com/johnthomastaylor/JTs-Ping-Monitor/releases/latest),
+double-click to mount, and drag **JT's Ping Monitor** into the
+**Applications** folder. Open it from Applications. The DMG is signed
+with an Apple Developer ID and notarized by Apple, so Gatekeeper accepts
+it on first launch with no warning.
+
+Once it's running, open Settings (⌘,) and toggle **Launch at login** if
+you'd like it to start with your Mac.
+
+## Build from source
+
+If you'd rather build it yourself:
 
 ```sh
 ./scripts/build-app.sh         # produces build/JT's Ping Monitor.app
 ./scripts/run.sh               # build and launch
+./scripts/build-dmg.sh         # produces build/JTs-Ping-Monitor.dmg (unsigned)
 ```
 
-## Install
-
-To make "Launch at login" durable and have the app live somewhere
-permanent, copy the bundle into `/Applications`:
+To install your local build into `/Applications`:
 
 ```sh
 ./scripts/build-app.sh
@@ -36,7 +48,22 @@ cp -R "build/JT's Ping Monitor.app" /Applications/
 open "/Applications/JT's Ping Monitor.app"
 ```
 
-Then open Settings (⌘,) and toggle **Launch at login**.
+### Producing a signed, notarized release DMG
+
+Requires an Apple Developer ID Application certificate in your keychain
+and a `notarytool` keychain profile (see Apple's
+[notarytool docs](https://developer.apple.com/documentation/security/customizing-the-notarization-workflow)).
+
+```sh
+DEVELOPER_ID="Developer ID Application: Your Name (TEAMID)" \
+NOTARY_PROFILE="ping-monitor" \
+./scripts/build-dmg.sh
+```
+
+The script signs the app with the hardened runtime, signs the DMG, ships
+it to Apple's notary service, waits for the ticket, and staples the
+ticket onto the DMG. Upload the resulting `build/JTs-Ping-Monitor.dmg`
+as a GitHub Release asset.
 
 ## Settings
 
