@@ -309,13 +309,13 @@ struct MainWindowView: View {
         .width(24)
     }
 
-    private var delayColumn: TableColumn<PingRow, KeyPathComparator<PingRow>, some View, Text> {
+    private var delayColumn: some TableColumnContent<PingRow, KeyPathComparator<PingRow>> {
         TableColumn(preferences.compactMode ? "Delay" : "Delay (ms)", value: \.stats.currentMsSortable) { row in
             Text(row.delayText)
                 .monospacedDigit()
-                .frame(maxWidth: .infinity, alignment: .trailing)
         }
         .width(min: 50, ideal: 80)
+        .alignment(.trailing)
     }
 
     private var hostColumn: TableColumn<PingRow, KeyPathComparator<PingRow>, some View, Text> {
