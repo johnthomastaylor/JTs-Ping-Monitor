@@ -14,6 +14,9 @@ min / avg / max) in a sortable table.
   launches)
 - Inline-edit any host's address or description (double-click a row)
 - Sort by any column (sort order is remembered)
+- **Compact view** toggle in the toolbar (or Settings) — collapses the
+  table to Status, Delay, Host; fits columns to content and shrinks the
+  window to match
 - Optional "Launch at login"
 
 Requires macOS 14+ and Xcode command-line tools (Swift 5.9+).
@@ -80,6 +83,10 @@ Settings → General:
 - **Latency decimals** — `3` / `3.1` / `3.11` / `3.111`
 - **Push timeout hosts to bottom** — partition down hosts to the bottom
   on top of whatever column sort is active
+- **Compact view** — same toggle as the toolbar's compact button; hides
+  Description / Sent / % OK / Min / Avg / Max / Error, fits the
+  remaining columns to content, and shrinks the window. Toggling off
+  restores the prior window width.
 - **Monochrome** — drops the green/red status tint and the red error
   text in favor of `.primary`
 - **Dim** + **Dim level** slider — reduce the table's opacity for a
