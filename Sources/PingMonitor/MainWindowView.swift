@@ -115,6 +115,7 @@ struct MainWindowView: View {
     @State private var showAddPopover: Bool = false
     @AppStorage("sortColumn") private var sortColumnRaw: String = SortColumn.host.rawValue
     @AppStorage("sortAscending") private var sortAscending: Bool = true
+    @AppStorage("expandedWindowWidth") private var expandedWindowWidth: Double = 800
 
     @State private var pendingResetIDs: Set<UUID> = []
     @State private var showResetConfirm: Bool = false
@@ -148,80 +149,7 @@ struct MainWindowView: View {
     }
 
     var body: some View {
-        Table(rows, selection: $selection, sortOrder: $sortOrder) {
-            TableColumn("") { row in
-                if preferences.showStatusIcons {
-                    Image(systemName: row.iconName)
-                        .foregroundStyle(row.iconColor)
-                } else {
-                    EmptyView()
-                }
-            }
-            .width(preferences.showStatusIcons ? 24 : 0)
-
-            TableColumn("Delay (ms)", value: \.stats.currentMsSortable) { row in
-                Text(row.delayText)
-                    .monospacedDigit()
-                    .frame(maxWidth: .infinity, alignment: .trailing)
-            }
-            .width(min: 50, ideal: 80)
-
-            TableColumn("Host", value: \.address) { row in
-                if editingHostID == row.id {
-                    TextField("hostname or IP", text: $editAddress)
-                        .textFieldStyle(.roundedBorder)
-                        .focused($focusedField, equals: .address)
-                        .onSubmit(commitEdit)
-                        .onExitCommand(perform: cancelEdit)
-                } else {
-                    Text(row.address)
-                }
-            }
-            .width(min: 60, ideal: 140)
-
-            TableColumn("Description", value: \.label) { row in
-                if editingHostID == row.id {
-                    TextField("description", text: $editLabel)
-                        .textFieldStyle(.roundedBorder)
-                        .focused($focusedField, equals: .label)
-                        .onSubmit(commitEdit)
-                        .onExitCommand(perform: cancelEdit)
-                } else {
-                    Text(row.label)
-                }
-            }
-            .width(min: 60, ideal: 180)
-
-            TableColumn("Sent", value: \.stats.sentCount) { row in
-                Text("\(row.stats.sentCount)").monospacedDigit()
-            }
-            .width(min: 40, ideal: 70)
-
-            TableColumn("% OK", value: \.stats.successRate) { row in
-                Text(row.percentText).monospacedDigit()
-            }
-            .width(min: 40, ideal: 70)
-
-            TableColumn("Min (ms)", value: \.stats.minMsSortable) { row in
-                Text(row.minText).monospacedDigit()
-            }
-            .width(min: 40, ideal: 70)
-
-            TableColumn("Avg (ms)", value: \.stats.avgMsSortable) { row in
-                Text(row.avgText).monospacedDigit()
-            }
-            .width(min: 40, ideal: 70)
-
-            TableColumn("Max (ms)", value: \.stats.maxMsSortable) { row in
-                Text(row.maxText).monospacedDigit()
-            }
-            .width(min: 40, ideal: 70)
-
-            TableColumn("Error") { row in
-                Text(row.errorText).foregroundStyle(row.errorColor)
-            }
-            .width(min: 60, ideal: 140)
-        }
+        tableView
         .frame(minWidth: 200, minHeight: 200)
         .opacity(preferences.dimMode ? preferences.dimOpacity : 1.0)
         .onDeleteCommand(perform: deleteSelected)
@@ -234,6 +162,18 @@ struct MainWindowView: View {
             if let id = ids.first { beginEdit(id: id) }
         }
         .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Toggle(isOn: $preferences.compactMode) {
+                    Label {
+                        Text("Compact")
+                    } icon: {
+                        Image(systemName: "rectangle.compress.vertical")
+                            .rotationEffect(.degrees(90))
+                    }
+                }
+                .toggleStyle(.button)
+                .help(preferences.compactMode ? "Show all columns" : "Compact view (Status, Delay, Host only)")
+            }
             ToolbarItem(placement: .primaryAction) {
                 Button {
                     showAddPopover = true
@@ -280,6 +220,11 @@ struct MainWindowView: View {
                 sortOrder = [col.comparator(ascending: sortAscending)]
             }
             installDoubleClickMonitor()
+            if preferences.compactMode {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                    applyCompactLayout()
+                }
+            }
         }
         .onDisappear {
             uninstallDoubleClickMonitor()
@@ -288,6 +233,18 @@ struct MainWindowView: View {
             guard let first = new.first, let col = SortColumn.identify(from: first) else { return }
             sortColumnRaw = col.rawValue
             sortAscending = first.order == .forward
+        }
+        .onChange(of: preferences.compactMode) { _, newValue in
+            if newValue {
+                captureExpandedWindowWidth()
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    applyCompactLayout()
+                }
+            } else {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    restoreExpandedWindowWidth()
+                }
+            }
         }
         .onReceive(NotificationCenter.default.publisher(for: .shrinkColumns)) { _ in
             shrinkColumnsInActiveTable()
@@ -301,6 +258,123 @@ struct MainWindowView: View {
         } message: {
             Text(resetMessage)
         }
+    }
+
+    @ViewBuilder
+    private var tableView: some View {
+        if preferences.compactMode {
+            Table(rows, selection: $selection, sortOrder: $sortOrder) {
+                statusColumn
+                delayColumn
+                hostColumn
+            }
+        } else {
+            Table(rows, selection: $selection, sortOrder: $sortOrder) {
+                statusColumn
+                delayColumn
+                hostColumn
+                descriptionColumn
+                sentColumn
+                percentOkColumn
+                minColumn
+                avgColumn
+                maxColumn
+                errorColumn
+            }
+        }
+    }
+
+    private var statusColumn: TableColumn<PingRow, Never, some View, Text> {
+        TableColumn("") { row in
+            if preferences.showStatusIcons {
+                Image(systemName: row.iconName)
+                    .foregroundStyle(row.iconColor)
+            } else {
+                EmptyView()
+            }
+        }
+        .width(preferences.showStatusIcons ? 24 : 0)
+    }
+
+    private var delayColumn: TableColumn<PingRow, KeyPathComparator<PingRow>, some View, Text> {
+        TableColumn(preferences.compactMode ? "Delay" : "Delay (ms)", value: \.stats.currentMsSortable) { row in
+            Text(row.delayText)
+                .monospacedDigit()
+                .frame(maxWidth: .infinity, alignment: .trailing)
+        }
+        .width(min: 50, ideal: 80)
+    }
+
+    private var hostColumn: TableColumn<PingRow, KeyPathComparator<PingRow>, some View, Text> {
+        TableColumn("Host", value: \.address) { row in
+            if editingHostID == row.id {
+                TextField("hostname or IP", text: $editAddress)
+                    .textFieldStyle(.roundedBorder)
+                    .focused($focusedField, equals: .address)
+                    .onSubmit(commitEdit)
+                    .onExitCommand(perform: cancelEdit)
+            } else {
+                Text(row.address)
+            }
+        }
+        .width(min: 60, ideal: 140)
+    }
+
+    private var descriptionColumn: TableColumn<PingRow, KeyPathComparator<PingRow>, some View, Text> {
+        TableColumn("Description", value: \.label) { row in
+            if editingHostID == row.id {
+                TextField("description", text: $editLabel)
+                    .textFieldStyle(.roundedBorder)
+                    .focused($focusedField, equals: .label)
+                    .onSubmit(commitEdit)
+                    .onExitCommand(perform: cancelEdit)
+            } else {
+                Text(row.label)
+            }
+        }
+        .width(min: 60, ideal: 180)
+    }
+
+    private var sentColumn: TableColumn<PingRow, KeyPathComparator<PingRow>, some View, Text> {
+        TableColumn("Sent", value: \.stats.sentCount) { row in
+            Text("\(row.stats.sentCount)").monospacedDigit()
+        }
+        .width(min: 40, ideal: 70)
+    }
+
+    private var percentOkColumn: TableColumn<PingRow, KeyPathComparator<PingRow>, some View, Text> {
+        TableColumn("% OK", value: \.stats.successRate) { row in
+            Text(row.percentText).monospacedDigit()
+        }
+        .width(min: 40, ideal: 70)
+    }
+
+    private var minColumn: TableColumn<PingRow, KeyPathComparator<PingRow>, some View, Text> {
+        TableColumn("Min (ms)", value: \.stats.minMsSortable) { row in
+            Text(row.minText).monospacedDigit()
+        }
+        .width(min: 40, ideal: 70)
+    }
+
+    private var avgColumn: TableColumn<PingRow, KeyPathComparator<PingRow>, some View, Text> {
+        TableColumn("Avg (ms)", value: \.stats.avgMsSortable) { row in
+            Text(row.avgText).monospacedDigit()
+        }
+        .width(min: 40, ideal: 70)
+    }
+
+    private var maxColumn: TableColumn<PingRow, KeyPathComparator<PingRow>, some View, Text> {
+        TableColumn("Max (ms)", value: \.stats.maxMsSortable) { row in
+            Text(row.maxText).monospacedDigit()
+        }
+        .width(min: 40, ideal: 70)
+    }
+
+    private var errorColumn: TableColumn<PingRow, Never, some View, Text> {
+        TableColumn("Error") { row in
+            Text(row.errorText).foregroundStyle(row.errorColor)
+        }
+        .width(min: 60, ideal: 140)
     }
 
     private var resetTitle: String {
@@ -459,6 +533,70 @@ struct MainWindowView: View {
                 where index < defaultColumnWidths.count {
                 column.width = defaultColumnWidths[index]
             }
+        }
+    }
+
+    /// Remember the window's current content width so we can restore it when
+    /// the user toggles compact mode off. Call this before shrinking.
+    private func captureExpandedWindowWidth() {
+        for window in NSApp.windows {
+            guard Self.findTableView(in: window.contentView) != nil,
+                  let content = window.contentView else { continue }
+            expandedWindowWidth = Double(content.frame.width)
+            return
+        }
+    }
+
+    /// Restore the saved pre-compact window width.
+    private func restoreExpandedWindowWidth() {
+        for window in NSApp.windows {
+            guard Self.findTableView(in: window.contentView) != nil,
+                  let content = window.contentView else { continue }
+            let newSize = NSSize(width: CGFloat(expandedWindowWidth), height: content.frame.height)
+            window.setContentSize(newSize)
+            return
+        }
+    }
+
+    /// Size the three compact columns to fit their content (measured directly
+    /// from the host data, not from rendered NSView frames — those report the
+    /// stretched column width in the full-mode table and inflate the result),
+    /// then shrink the window's content width to match.
+    private func applyCompactLayout() {
+        let cellPadding: CGFloat = 14
+        let bodyFont = NSFont.systemFont(ofSize: NSFont.systemFontSize)
+        let monoFont = NSFont.monospacedDigitSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
+        let bodyAttrs: [NSAttributedString.Key: Any] = [.font: bodyFont]
+        let monoAttrs: [NSAttributedString.Key: Any] = [.font: monoFont]
+
+        let snapshot = rows
+        let statusWidth: CGFloat = preferences.showStatusIcons ? 24 : 0
+
+        let delayBody = snapshot.map { ($0.delayText as NSString).size(withAttributes: monoAttrs).width }.max() ?? 0
+        let delayHeader = ("Delay" as NSString).size(withAttributes: bodyAttrs).width
+        let delayWidth = max(delayBody, delayHeader) + cellPadding
+
+        let hostBody = snapshot.map { ($0.address as NSString).size(withAttributes: bodyAttrs).width }.max() ?? 0
+        let hostHeader = ("Host" as NSString).size(withAttributes: bodyAttrs).width
+        let hostWidth = max(hostBody, hostHeader) + cellPadding
+
+        let totalColumnWidth = statusWidth + delayWidth + hostWidth
+
+        for window in NSApp.windows {
+            guard let table = Self.findTableView(in: window.contentView) else { continue }
+            if table.tableColumns.count == 3 {
+                table.tableColumns[0].width = statusWidth
+                table.tableColumns[1].width = delayWidth
+                table.tableColumns[2].width = hostWidth
+            }
+            guard let nsWindow = table.window, let content = nsWindow.contentView else { continue }
+            let intercellSpacing = table.intercellSpacing.width * 2
+            let scrollerWidth: CGFloat = table.enclosingScrollView?.verticalScroller?.frame.width ?? 16
+            let buffer: CGFloat = 8
+            let targetContentWidth = totalColumnWidth + intercellSpacing + scrollerWidth + buffer
+            let newSize = NSSize(width: targetContentWidth, height: content.frame.height)
+            nsWindow.setContentSize(newSize)
+            return
         }
     }
 

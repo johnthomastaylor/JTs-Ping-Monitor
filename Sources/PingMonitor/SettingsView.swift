@@ -35,6 +35,8 @@ struct SettingsView: View {
 
                 Toggle("Push timeout hosts to bottom", isOn: $preferences.pushTimeoutsToBottom)
 
+                Toggle("Compact view (Status, Delay, Host only)", isOn: $preferences.compactMode)
+
                 Toggle("Monochrome", isOn: $preferences.monochrome)
 
                 Toggle("Dim", isOn: $preferences.dimMode)
