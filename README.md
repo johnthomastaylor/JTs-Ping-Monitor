@@ -51,23 +51,6 @@ cp -R "build/JT's Ping Monitor.app" /Applications/
 open "/Applications/JT's Ping Monitor.app"
 ```
 
-### Producing a signed, notarized release DMG
-
-Requires an Apple Developer ID Application certificate in your keychain
-and a `notarytool` keychain profile (see Apple's
-[notarytool docs](https://developer.apple.com/documentation/security/customizing-the-notarization-workflow)).
-
-```sh
-DEVELOPER_ID="Developer ID Application: Your Name (TEAMID)" \
-NOTARY_PROFILE="ping-monitor" \
-./scripts/build-dmg.sh
-```
-
-The script signs the app with the hardened runtime, signs the DMG, ships
-it to Apple's notary service, waits for the ticket, and staples the
-ticket onto the DMG. Upload the resulting `build/JTs-Ping-Monitor.dmg`
-as a GitHub Release asset.
-
 ## Settings
 
 <p align="center">
