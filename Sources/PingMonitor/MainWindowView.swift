@@ -165,10 +165,9 @@ struct MainWindowView: View {
             ToolbarItem(placement: .primaryAction) {
                 Toggle(isOn: $preferences.compactMode) {
                     Label {
-                        Text("Compact")
+                        Text(preferences.compactMode ? "Expand" : "Compact")
                     } icon: {
-                        Image(systemName: "rectangle.compress.vertical")
-                            .rotationEffect(.degrees(90))
+                        CompactToggleIcon(expanded: preferences.compactMode)
                     }
                 }
                 .toggleStyle(.button)
@@ -262,15 +261,33 @@ struct MainWindowView: View {
 
     @ViewBuilder
     private var tableView: some View {
-        if preferences.compactMode {
+        switch (preferences.compactMode, preferences.showStatusIcons) {
+        case (true, true):
             Table(rows, selection: $selection, sortOrder: $sortOrder) {
                 statusColumn
                 delayColumn
                 hostColumn
             }
-        } else {
+        case (true, false):
+            Table(rows, selection: $selection, sortOrder: $sortOrder) {
+                delayColumn
+                hostColumn
+            }
+        case (false, true):
             Table(rows, selection: $selection, sortOrder: $sortOrder) {
                 statusColumn
+                delayColumn
+                hostColumn
+                descriptionColumn
+                sentColumn
+                percentOkColumn
+                minColumn
+                avgColumn
+                maxColumn
+                errorColumn
+            }
+        case (false, false):
+            Table(rows, selection: $selection, sortOrder: $sortOrder) {
                 delayColumn
                 hostColumn
                 descriptionColumn
@@ -286,14 +303,10 @@ struct MainWindowView: View {
 
     private var statusColumn: TableColumn<PingRow, Never, some View, Text> {
         TableColumn("") { row in
-            if preferences.showStatusIcons {
-                Image(systemName: row.iconName)
-                    .foregroundStyle(row.iconColor)
-            } else {
-                EmptyView()
-            }
+            Image(systemName: row.iconName)
+                .foregroundStyle(row.iconColor)
         }
-        .width(preferences.showStatusIcons ? 24 : 0)
+        .width(24)
     }
 
     private var delayColumn: TableColumn<PingRow, KeyPathComparator<PingRow>, some View, Text> {
@@ -525,13 +538,17 @@ struct MainWindowView: View {
     }
 
     /// Restore each column to its default ideal width — the layout the user
-    /// would see on first launch.
+    /// would see on first launch. Skips the leading status width when the
+    /// status column isn't currently shown.
     private func resetColumnsInActiveTable() {
+        let widths = preferences.showStatusIcons
+            ? defaultColumnWidths
+            : Array(defaultColumnWidths.dropFirst())
         for window in NSApp.windows {
             guard let table = Self.findTableView(in: window.contentView) else { continue }
             for (index, column) in table.tableColumns.enumerated()
-                where index < defaultColumnWidths.count {
-                column.width = defaultColumnWidths[index]
+                where index < widths.count {
+                column.width = widths[index]
             }
         }
     }
@@ -558,8 +575,8 @@ struct MainWindowView: View {
         }
     }
 
-    /// Size the three compact columns to fit their content (measured directly
-    /// from the host data, not from rendered NSView frames — those report the
+    /// Size the compact columns to fit their content (measured directly from
+    /// the host data, not from rendered NSView frames — those report the
     /// stretched column width in the full-mode table and inflate the result),
     /// then shrink the window's content width to match.
     private func applyCompactLayout() {
@@ -570,7 +587,8 @@ struct MainWindowView: View {
         let monoAttrs: [NSAttributedString.Key: Any] = [.font: monoFont]
 
         let snapshot = rows
-        let statusWidth: CGFloat = preferences.showStatusIcons ? 24 : 0
+        let showStatus = preferences.showStatusIcons
+        let statusWidth: CGFloat = showStatus ? 24 : 0
 
         let delayBody = snapshot.map { ($0.delayText as NSString).size(withAttributes: monoAttrs).width }.max() ?? 0
         let delayHeader = ("Delay" as NSString).size(withAttributes: bodyAttrs).width
@@ -581,16 +599,22 @@ struct MainWindowView: View {
         let hostWidth = max(hostBody, hostHeader) + cellPadding
 
         let totalColumnWidth = statusWidth + delayWidth + hostWidth
+        let expectedColumns = showStatus ? 3 : 2
 
         for window in NSApp.windows {
             guard let table = Self.findTableView(in: window.contentView) else { continue }
-            if table.tableColumns.count == 3 {
-                table.tableColumns[0].width = statusWidth
-                table.tableColumns[1].width = delayWidth
-                table.tableColumns[2].width = hostWidth
+            if table.tableColumns.count == expectedColumns {
+                if showStatus {
+                    table.tableColumns[0].width = statusWidth
+                    table.tableColumns[1].width = delayWidth
+                    table.tableColumns[2].width = hostWidth
+                } else {
+                    table.tableColumns[0].width = delayWidth
+                    table.tableColumns[1].width = hostWidth
+                }
             }
             guard let nsWindow = table.window, let content = nsWindow.contentView else { continue }
-            let intercellSpacing = table.intercellSpacing.width * 2
+            let intercellSpacing = table.intercellSpacing.width * CGFloat(max(0, expectedColumns - 1))
             let scrollerWidth: CGFloat = table.enclosingScrollView?.verticalScroller?.frame.width ?? 16
             let buffer: CGFloat = 8
             let targetContentWidth = totalColumnWidth + intercellSpacing + scrollerWidth + buffer
@@ -607,6 +631,44 @@ struct MainWindowView: View {
             if let found = findTableView(in: subview) { return found }
         }
         return nil
+    }
+}
+
+/// SwiftUI's toolbar overflow menu (the >> dropdown) strips view modifiers
+/// from a Label's icon and re-renders the bare SF Symbol, so a `.rotationEffect`
+/// applied to an `Image(systemName:)` is lost there. Bake the rotation into an
+/// NSImage instead — the rotated pixels travel with the image into every
+/// rendering path.
+private struct CompactToggleIcon: View {
+    /// `true` when the toggle's action would expand (we're currently compact);
+    /// renders arrows pointing outward. `false` shows arrows pointing inward.
+    let expanded: Bool
+
+    var body: some View {
+        Image(nsImage: expanded ? Self.expandImage : Self.compressImage)
+    }
+
+    private static let compressImage: NSImage = makeRotated("rectangle.compress.vertical")
+    private static let expandImage: NSImage = makeRotated("rectangle.expand.vertical")
+
+    private static func makeRotated(_ symbolName: String) -> NSImage {
+        let config = NSImage.SymbolConfiguration(pointSize: NSFont.systemFontSize, weight: .regular)
+        guard let base = NSImage(systemSymbolName: symbolName, accessibilityDescription: nil)?
+                .withSymbolConfiguration(config) else {
+            return NSImage()
+        }
+        let size = base.size
+        let rotatedSize = NSSize(width: size.height, height: size.width)
+        let result = NSImage(size: rotatedSize, flipped: false) { rect in
+            guard let ctx = NSGraphicsContext.current?.cgContext else { return false }
+            ctx.translateBy(x: rect.width / 2, y: rect.height / 2)
+            ctx.rotate(by: .pi / 2)
+            ctx.translateBy(x: -size.width / 2, y: -size.height / 2)
+            base.draw(in: NSRect(origin: .zero, size: size))
+            return true
+        }
+        result.isTemplate = true
+        return result
     }
 }
 
