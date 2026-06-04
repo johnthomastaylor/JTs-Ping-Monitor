@@ -130,7 +130,7 @@ struct MainWindowView: View {
     private var rows: [PingRow] {
         let decimals = preferences.latencyDecimals
         let monochrome = preferences.monochrome
-        let raw = state.hosts.map { host in
+        let raw = state.hosts.filter { !$0.hidden }.map { host in
             PingRow(
                 id: host.id,
                 address: host.address,
@@ -152,14 +152,29 @@ struct MainWindowView: View {
         tableView
         .frame(minWidth: 200, minHeight: 200)
         .opacity(preferences.dimMode ? preferences.dimOpacity : 1.0)
+        .overlay(alignment: .topTrailing) {
+            // Invisible anchor the Add Host popover hangs off of. Lives near the
+            // toolbar's Add button so the popover appears in roughly the same spot.
+            AddHostPopoverAnchor(isPresented: $showAddPopover, state: state)
+                .frame(width: 1, height: 1)
+                .allowsHitTesting(false)
+        }
         .onDeleteCommand(perform: deleteSelected)
         .contextMenu(forSelectionType: UUID.self) { ids in
-            Button("Edit") { if let id = ids.first { beginEdit(id: id) } }
-                .disabled(ids.count != 1)
-            Button("Open Ping in Terminal") { if let id = ids.first { openPingInTerminal(id: id) } }
-                .disabled(ids.count != 1)
-            Button("Delete") { delete(ids: ids) }
-            Button("Reset stats") { askReset(ids: ids) }
+            if ids.isEmpty {
+                // Right-click on empty space (no row hit).
+                Button("Add Host…") { showAddPopover = true }
+                Button("Restore Hidden Hosts") { state.restoreAllHidden() }
+                    .disabled(!state.hasHiddenHosts)
+            } else {
+                Button("Edit") { if let id = ids.first { beginEdit(id: id) } }
+                    .disabled(ids.count != 1)
+                Button("Open Ping in Terminal") { if let id = ids.first { openPingInTerminal(id: id) } }
+                    .disabled(ids.count != 1)
+                Button("Hide") { state.setHidden(true, ids: ids) }
+                Button("Delete") { delete(ids: ids) }
+                Button("Reset stats") { askReset(ids: ids) }
+            }
         } primaryAction: { ids in
             if let id = ids.first { beginEdit(id: id) }
         }
@@ -182,10 +197,6 @@ struct MainWindowView: View {
                     Label("Add", systemImage: "plus")
                 }
                 .help("Add host")
-                .popover(isPresented: $showAddPopover, arrowEdge: .bottom) {
-                    AddHostPopover(isPresented: $showAddPopover)
-                        .environmentObject(state)
-                }
             }
             ToolbarItem(placement: .primaryAction) {
                 Button(role: .destructive, action: deleteSelected) {
@@ -676,6 +687,64 @@ private struct CompactToggleIcon: View {
         }
         result.isTemplate = true
         return result
+    }
+}
+
+/// Hosts the Add Host form in an AppKit NSPopover with `.semitransient`
+/// behavior. Unlike SwiftUI's native `.popover` (always `.transient`, which
+/// dies the moment the app loses focus), a semitransient popover stays open
+/// when the user switches to another app — e.g. to copy text to paste in —
+/// and only closes when they click elsewhere inside this window.
+private struct AddHostPopoverAnchor: NSViewRepresentable {
+    @Binding var isPresented: Bool
+    var state: AppState
+
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
+
+    func makeNSView(context: Context) -> NSView { NSView() }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        context.coordinator.parent = self
+        if isPresented {
+            context.coordinator.show(from: nsView)
+        } else {
+            context.coordinator.hide()
+        }
+    }
+
+    final class Coordinator: NSObject, NSPopoverDelegate {
+        var parent: AddHostPopoverAnchor
+        private var popover: NSPopover?
+
+        init(_ parent: AddHostPopoverAnchor) { self.parent = parent }
+
+        func show(from view: NSView) {
+            guard popover == nil, view.window != nil else { return }
+            let binding = Binding<Bool>(
+                get: { [weak self] in self?.parent.isPresented ?? false },
+                set: { [weak self] in self?.parent.isPresented = $0 }
+            )
+            let content = AddHostPopover(isPresented: binding)
+                .environmentObject(parent.state)
+            let popover = NSPopover()
+            popover.behavior = .semitransient
+            popover.delegate = self
+            popover.contentViewController = NSHostingController(rootView: content)
+            popover.show(relativeTo: view.bounds, of: view, preferredEdge: .minY)
+            self.popover = popover
+        }
+
+        func hide() {
+            popover?.performClose(nil)
+            popover = nil
+        }
+
+        func popoverDidClose(_ notification: Notification) {
+            popover = nil
+            if parent.isPresented {
+                DispatchQueue.main.async { self.parent.isPresented = false }
+            }
+        }
     }
 }
 

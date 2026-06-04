@@ -65,14 +65,16 @@ final class AppState: ObservableObject {
     }
 
     private func rebuildHostTasks() {
-        let currentIDs = Set(hosts.map(\.id))
-        // Cancel tasks for removed hosts
-        for (id, task) in hostTasks where !currentIDs.contains(id) {
+        // Hidden hosts are excluded from view and aren't worth pinging; their
+        // tasks are torn down here and re-spawned if the host is restored.
+        let activeIDs = Set(hosts.filter { !$0.hidden }.map(\.id))
+        // Cancel tasks for removed or now-hidden hosts
+        for (id, task) in hostTasks where !activeIDs.contains(id) {
             task.cancel()
             hostTasks.removeValue(forKey: id)
         }
-        // Spawn a task for each new host
-        for host in hosts where hostTasks[host.id] == nil {
+        // Spawn a task for each new visible host
+        for host in hosts where !host.hidden && hostTasks[host.id] == nil {
             hostTasks[host.id] = makePollingTask(for: host.id)
         }
     }
@@ -193,6 +195,34 @@ final class AppState: ObservableObject {
         statsStore.remove(host.id)
     }
 
+    var hasHiddenHosts: Bool { hosts.contains { $0.hidden } }
+
+    var hiddenHostCount: Int { hosts.lazy.filter { $0.hidden }.count }
+
+    /// Hide or unhide the given hosts. Hidden hosts drop out of the list and
+    /// stop being pinged until restored. Assigns `hosts` once so the didSet
+    /// fires a single save/rebuild.
+    func setHidden(_ hidden: Bool, ids: Set<UUID>) {
+        guard !ids.isEmpty else { return }
+        var working = hosts
+        var changed = false
+        for i in working.indices where ids.contains(working[i].id) && working[i].hidden != hidden {
+            working[i].hidden = hidden
+            changed = true
+        }
+        if changed { hosts = working }
+    }
+
+    /// Unhide every hidden host.
+    func restoreAllHidden() {
+        guard hasHiddenHosts else { return }
+        var working = hosts
+        for i in working.indices where working[i].hidden {
+            working[i].hidden = false
+        }
+        hosts = working
+    }
+
     func removeHosts(at offsets: IndexSet) {
         let ids = offsets.map { hosts[$0].id }
         hosts.remove(atOffsets: offsets)
@@ -244,7 +274,7 @@ final class AppState: ObservableObject {
             seen.insert(key)
 
             if let existing = existingByAddress[key] {
-                newHosts.append(PingHost(id: existing.id, address: address, label: entry.label))
+                newHosts.append(PingHost(id: existing.id, address: address, label: entry.label, hidden: existing.hidden))
             } else {
                 let host = PingHost(address: address, label: entry.label)
                 newHosts.append(host)

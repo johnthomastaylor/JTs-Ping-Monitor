@@ -9,6 +9,11 @@ struct SettingsView: View {
     @State private var showBulkEdit: Bool = false
     @State private var bulkEditText: String = ""
 
+    private var restoreHiddenTitle: String {
+        let count = state.hiddenHostCount
+        return count > 0 ? "Restore Hidden Hosts (\(count))" : "Restore Hidden Hosts"
+    }
+
     var body: some View {
         Form {
             Section {
@@ -83,6 +88,12 @@ struct SettingsView: View {
                 } label: {
                     Label("Edit Host List…", systemImage: "list.bullet.rectangle")
                 }
+                Button {
+                    state.restoreAllHidden()
+                } label: {
+                    Label(restoreHiddenTitle, systemImage: "eye")
+                }
+                .disabled(!state.hasHiddenHosts)
             }
 
             Section("Layout") {
