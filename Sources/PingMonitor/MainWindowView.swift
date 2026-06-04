@@ -156,6 +156,8 @@ struct MainWindowView: View {
         .contextMenu(forSelectionType: UUID.self) { ids in
             Button("Edit") { if let id = ids.first { beginEdit(id: id) } }
                 .disabled(ids.count != 1)
+            Button("Open Ping in Terminal") { if let id = ids.first { openPingInTerminal(id: id) } }
+                .disabled(ids.count != 1)
             Button("Delete") { delete(ids: ids) }
             Button("Reset stats") { askReset(ids: ids) }
         } primaryAction: { ids in
@@ -427,6 +429,11 @@ struct MainWindowView: View {
                 state.removeHost(host)
             }
         }
+    }
+
+    private func openPingInTerminal(id: UUID) {
+        guard let host = state.hosts.first(where: { $0.id == id }) else { return }
+        Pinger.openInTerminal(host: host.address)
     }
 
     private func beginEdit(id: UUID, focus: EditField = .address) {
